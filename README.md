@@ -26,10 +26,10 @@ open `http://localhost:3012`, edit and preview html in your browser
 
 ## Support Features
 
-[x] reload after change html file 
+- [x] reload after change html file 
 
-[x] reload after change referenced JavaScript/CSS
+- [x] reload after change referenced JavaScript/CSS
 
-[ ] live reload when changed global javascript variable
+- [ ] live reload when changed global javascript variable
 
-[ ] built-in popular libraries support
+- [ ] built-in popular libraries support
