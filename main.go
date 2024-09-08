@@ -22,36 +22,6 @@ const (
 	topicMetrics       = "metrics"
 )
 
-var sseHandler = &sse.Server{
-	Provider: &sse.Joe{
-		ReplayProvider: &sse.ValidReplayProvider{
-			TTL:        time.Minute * 5,
-			GCInterval: time.Minute,
-			AutoIDs:    true,
-		},
-	},
-	OnSession: func(s *sse.Session) (sse.Subscription, bool) {
-		topics := s.Req.URL.Query()["topic"]
-		for _, topic := range topics {
-			if topic != topicRandomNumbers && topic != topicMetrics {
-				fmt.Fprintf(s.Res, "invalid topic %q; supported are %q, %q", topic, topicRandomNumbers, topicMetrics)
-				s.Res.WriteHeader(http.StatusBadRequest)
-				return sse.Subscription{}, false
-			}
-		}
-		if len(topics) == 0 {
-			// Provide default topics, if none are given.
-			topics = []string{topicRandomNumbers, topicMetrics}
-		}
-
-		return sse.Subscription{
-			Client:      s,
-			LastEventID: s.LastEventID,
-			Topics:      append(topics, sse.DefaultTopic), // the shutdown message is sent on the default topic
-		}, true
-	},
-}
-
 var htmlFilePath string
 var rootCmd = &cobra.Command{
 	Use:   "wd <any html file>",
@@ -69,14 +39,7 @@ var rootCmd = &cobra.Command{
 			os.Exit(1)
 		}
 		htmlFilePath = unknownFile
-		// Do Stuff Here
 	},
-}
-
-func sseReload() {
-	m := &sse.Message{}
-	m.AppendData("__RELOAD__")
-	sseHandler.Publish(m)
 }
 
 // go run . fixture1.html --port 3013
@@ -87,7 +50,7 @@ func main() {
 		os.Exit(1)
 	}
 	go Watch(htmlFilePath, func() {
-		sseReload()
+		SSEReload()
 	})
 
 	apiEngine := gin.New()
@@ -103,7 +66,7 @@ func main() {
 			sseHandler.Publish(m)
 		})
 		apiG.GET("/publish/reload", func(c *gin.Context) {
-			sseReload()
+			SSEReload()
 		})
 		apiG.GET("/events", gin.WrapH(sseHandler))
 	}
