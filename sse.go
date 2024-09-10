@@ -7,6 +7,11 @@ import (
 	"time"
 )
 
+const (
+	topicRandomNumbers = "numbers"
+	topicMetrics       = "metrics"
+)
+
 var sseHandler = &sse.Server{
 	Provider: &sse.Joe{
 		ReplayProvider: &sse.ValidReplayProvider{
