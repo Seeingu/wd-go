@@ -4,23 +4,37 @@ import (
 	"github.com/fsnotify/fsnotify"
 	"log"
 	"path"
+	"path/filepath"
 	"slices"
 	"strings"
 )
 
-func Watch(p string, reload func()) {
+// Watch html file and its references change
+func Watch(htmlFilePath string, reload func()) error {
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 	defer watcher.Close()
-	htmlRef := HtmlCrossReference(p)
-	filesToWatch := []string{p}
-	for _, s := range htmlRef.scripts {
-		filesToWatch = append(filesToWatch, s)
+
+	htmlRef, err := HtmlCrossReference(htmlFilePath)
+	if err != nil {
+		log.Println("Format file path failed")
+		return err
 	}
-	for _, s := range htmlRef.styles {
-		filesToWatch = append(filesToWatch, s)
+
+	h, err := filepath.Abs(htmlFilePath)
+	if err != nil {
+		return err
+	}
+	filesToWatch := []string{h}
+	for _, s := range append(htmlRef.scripts, htmlRef.styles...) {
+		p, err := filepath.Abs(s)
+		if err != nil {
+			log.Printf("Format file path failed %s\n", s)
+			return err
+		}
+		filesToWatch = append(filesToWatch, p)
 	}
 
 	go func() {
@@ -30,13 +44,13 @@ func Watch(p string, reload func()) {
 				if !ok {
 					return
 				}
-				// log.Println("event:", event)
 				if event.Has(fsnotify.Write) || event.Has(fsnotify.Create) {
 					// tmp file saved
 					if !strings.HasSuffix(event.Name, "~") {
 						log.Println("modified file:", event.Name)
 					}
-					if slices.Contains(filesToWatch, event.Name) {
+					p, _ := filepath.Abs(event.Name)
+					if slices.Contains(filesToWatch, p) {
 						log.Println("reload:", event.Name)
 						reload()
 					}
@@ -56,4 +70,5 @@ func Watch(p string, reload func()) {
 		log.Println("start watching: ", pp)
 	}
 	<-make(chan struct{})
+	return nil
 }

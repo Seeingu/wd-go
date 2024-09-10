@@ -2,7 +2,6 @@ package main
 
 import (
 	"golang.org/x/net/html"
-	"log"
 	"os"
 	"strings"
 )
@@ -12,7 +11,7 @@ type HtmlRef struct {
 	styles  []string
 }
 
-func htmlBody(doc *html.Node) HtmlRef {
+func htmlBody(doc *html.Node) (HtmlRef, error) {
 	htmlRef := HtmlRef{
 		scripts: []string{},
 		styles:  []string{},
@@ -48,18 +47,18 @@ func htmlBody(doc *html.Node) HtmlRef {
 		}
 	}
 	crawler(doc)
-	return htmlRef
+	return htmlRef, nil
 }
 
-func HtmlCrossReference(filePath string) HtmlRef {
+func HtmlCrossReference(filePath string) (HtmlRef, error) {
 	r, err := os.Open(filePath)
 	if err != nil {
-		log.Fatalln(err)
+		return HtmlRef{}, err
 	}
 	doc, err := html.Parse(r)
 	if err != nil {
-		log.Fatalln(err)
+		return HtmlRef{}, err
 	}
-	ref := htmlBody(doc)
-	return ref
+	ref, err := htmlBody(doc)
+	return ref, err
 }

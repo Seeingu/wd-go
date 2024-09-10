@@ -7,19 +7,13 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/spf13/cobra"
 	"github.com/tmaxmax/go-sse"
+	"log"
 	"net/http"
 	"os"
 	"path"
 	"strconv"
 	"strings"
 	"time"
-)
-
-const DefaultPort = 3012
-
-const (
-	topicRandomNumbers = "numbers"
-	topicMetrics       = "metrics"
 )
 
 var htmlFilePath string
@@ -42,65 +36,95 @@ var rootCmd = &cobra.Command{
 	},
 }
 
-// go run . fixture1.html --port 3013
-func main() {
-	port := rootCmd.Flags().IntP("port", "p", DefaultPort, "http server port")
-	if err := rootCmd.Execute(); err != nil {
-		fmt.Println(err)
-		os.Exit(1)
-	}
-	go Watch(htmlFilePath, func() {
-		SSEReload()
-	})
-
+func registerApi() *gin.Engine {
 	apiEngine := gin.New()
 	apiG := apiEngine.Group("/api")
 	{
 		apiG.GET("/reload.js", func(c *gin.Context) {
 			content, _ := os.ReadFile("static/reload.js")
-			c.Data(200, "application/javascript", content)
+			c.Data(http.StatusOK, "application/javascript", content)
 		})
-		apiG.GET("/publish", func(c *gin.Context) {
+		// Publish example response
+		apiG.POST("/publish", func(c *gin.Context) {
 			m := &sse.Message{}
-			m.AppendData("Hello world!", "Nice\nto see you.")
-			sseHandler.Publish(m)
+			m.AppendData("Hello world!")
+			err := sseHandler.Publish(m)
+			if err != nil {
+				c.Status(http.StatusInternalServerError)
+			} else {
+				c.Status(http.StatusOK)
+			}
 		})
+		// Force page reload
 		apiG.GET("/publish/reload", func(c *gin.Context) {
 			SSEReload()
+			c.Status(http.StatusOK)
 		})
 		apiG.GET("/events", gin.WrapH(sseHandler))
 	}
+	return apiEngine
+}
+
+const DefaultPort = 3012
+
+func startWatch() {
+	err := Watch(htmlFilePath, func() {
+		SSEReload()
+	})
+	if err != nil {
+		log.Println("Watch file change failed")
+		log.Fatal(err)
+	}
+}
+
+var corsEnabled = cors.New(cors.Config{
+	AllowOrigins:     []string{"*"},
+	AllowMethods:     []string{"*"},
+	AllowHeaders:     []string{"Origin"},
+	ExposeHeaders:    []string{"Content-Length"},
+	AllowCredentials: true,
+	MaxAge:           12 * time.Hour,
+})
+
+func mainRouteHandler(c *gin.Context) {
+	apiEngine := registerApi()
+	p := c.Param("any")
+	if strings.HasPrefix(p, "/api") {
+		apiEngine.HandleContext(c)
+		return
+	}
+
+	// default html index
+	if p == "/" {
+		p = htmlFilePath
+	}
+	// Read file relative to current dir
+	contents, err := os.ReadFile(path.Join(".", p))
+	if err != nil {
+		msg :=
+			fmt.Sprintf("failed to read file %q: %v", p, err)
+		c.Data(http.StatusInternalServerError, "text/html; charset=utf-8", []byte(
+			msg,
+		))
+	}
+	c.Data(http.StatusOK, "text/html; charset=utf-8", contents)
+}
+
+func parseArgs() int {
+	port := rootCmd.Flags().IntP("port", "p", DefaultPort, "http server port")
+	if err := rootCmd.Execute(); err != nil {
+		log.Fatal(err)
+	}
+	return *port
+}
+
+// go run . fixture1.html --port 3013
+func main() {
+	port := parseArgs()
+	go startWatch()
 
 	r := gin.Default()
-	r.Use(cors.New(cors.Config{
-		AllowOrigins:     []string{"*"},
-		AllowMethods:     []string{"*"},
-		AllowHeaders:     []string{"Origin"},
-		ExposeHeaders:    []string{"Content-Length"},
-		AllowCredentials: true,
-		MaxAge:           12 * time.Hour,
-	}))
-	r.GET("/*any", func(c *gin.Context) {
-		p := c.Param("any")
-		if strings.HasPrefix(p, "/api") {
-			apiEngine.HandleContext(c)
-			return
-		}
-
-		// default html index
-		if p == "/" {
-			p = htmlFilePath
-		}
-		// Read file relative to current dir
-		contents, err := os.ReadFile(path.Join(".", p))
-		if err != nil {
-			msg :=
-				fmt.Sprintf("failed to read file %q: %v", p, err)
-			c.Data(http.StatusInternalServerError, "text/html; charset=utf-8", []byte(
-				msg,
-			))
-		}
-		c.Data(http.StatusOK, "text/html; charset=utf-8", contents)
-	})
-	r.Run(":" + strconv.Itoa(*port))
+	r.Use(corsEnabled)
+	r.GET("/*any", mainRouteHandler)
+	r.Run(":" + strconv.Itoa(port))
 }
